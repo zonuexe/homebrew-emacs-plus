@@ -1,5 +1,6 @@
 require_relative "UrlResolver"
 require_relative "BuildConfig"
+require_relative "UrlHandler"
 
 class CopyDownloadStrategy < AbstractFileDownloadStrategy
   def initialize(url, name, version, **meta)
@@ -409,6 +410,12 @@ class EmacsBase < Formula
     !config.key?("inject_path") || config["inject_path"]
   end
 
+  # Enable optional emacs:// URL handler in Emacs Client.app
+  def emacs_url_handler_enabled?
+    config = custom_config
+    config["emacs_url_handler"] == true
+  end
+
   # Build the base PATH for native compilation (always included first)
   def native_comp_path
     # Use Homebrew's detected prefix
@@ -637,12 +644,19 @@ class EmacsBase < Formula
     # Prepare PATH for injection into AppleScript (see escape_for_applescript_shell)
     # Use the same build_path logic as inject_path for consistency
     escaped_path = escape_for_applescript_shell(build_path)
+    needs_framework, emacs_url_handler = UrlHandler.build_applescript(
+      escaped_path: escaped_path,
+      emacsclient_path: "#{prefix}/bin/emacsclient",
+      enable_handler: emacs_url_handler_enabled?
+    )
 
     # Create AppleScript source
     client_script = buildpath/"emacs-client.applescript"
     client_script.write <<~EOS
       -- Emacs Client AppleScript Application
       -- Handles opening files from Finder, drag-and-drop, and launching from Spotlight/Dock
+      #{needs_framework ? 'use framework "Foundation"' : ""}
+      use scripting additions
 
       on open theDropped
         repeat with oneDrop in theDropped
@@ -666,8 +680,9 @@ class EmacsBase < Formula
         end try
       end run
 
-      -- Handle org-protocol:// URLs (for org-capture, org-roam, etc.)
+      -- Handle URL schemes
       on open location this_URL
+        #{emacs_url_handler}
         try
           do shell script "PATH='#{escaped_path}' #{prefix}/bin/emacsclient -n " & quoted form of this_URL
         end try
@@ -706,12 +721,13 @@ class EmacsBase < Formula
     system "/usr/libexec/PlistBuddy", "-c", "Add :CFBundleDocumentTypes:0:LSItemContentTypes:4 string public.shell-script", client_plist
     system "/usr/libexec/PlistBuddy", "-c", "Add :CFBundleDocumentTypes:0:LSItemContentTypes:5 string public.data", client_plist
 
-    # Register org-protocol URL scheme for org-capture, org-roam, etc.
     system "/usr/libexec/PlistBuddy", "-c", "Add :CFBundleURLTypes array", client_plist
-    system "/usr/libexec/PlistBuddy", "-c", "Add :CFBundleURLTypes:0 dict", client_plist
-    system "/usr/libexec/PlistBuddy", "-c", "Add :CFBundleURLTypes:0:CFBundleURLName string 'Org Protocol'", client_plist
-    system "/usr/libexec/PlistBuddy", "-c", "Add :CFBundleURLTypes:0:CFBundleURLSchemes array", client_plist
-    system "/usr/libexec/PlistBuddy", "-c", "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string org-protocol", client_plist
+    UrlHandler.url_types(enable_handler: emacs_url_handler_enabled?).each_with_index do |url_type, idx|
+      system "/usr/libexec/PlistBuddy", "-c", "Add :CFBundleURLTypes:#{idx} dict", client_plist
+      system "/usr/libexec/PlistBuddy", "-c", "Add :CFBundleURLTypes:#{idx}:CFBundleURLName string '#{url_type[:name]}'", client_plist
+      system "/usr/libexec/PlistBuddy", "-c", "Add :CFBundleURLTypes:#{idx}:CFBundleURLSchemes array", client_plist
+      system "/usr/libexec/PlistBuddy", "-c", "Add :CFBundleURLTypes:#{idx}:CFBundleURLSchemes:0 string #{url_type[:scheme]}", client_plist
+    end
 
     # Install custom icon (replace osacompile's default droplet icon)
     client_resources_dir = buildpath/"nextstep/Emacs Client.app/Contents/Resources"

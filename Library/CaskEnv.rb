@@ -24,6 +24,7 @@
 # Native compilation works via CC and LIBRARY_PATH without needing PATH.
 
 require_relative 'BuildConfig'
+require_relative 'UrlHandler'
 
 module CaskEnv
   class << self
@@ -51,6 +52,12 @@ module CaskEnv
     def inject_path?
       return true unless @config
       !@config.key?("inject_path") || @config["inject_path"]
+    end
+
+    # Enable optional emacs:// URL handler in Emacs Client.app
+    def emacs_url_handler_enabled?
+      return false unless @config
+      @config["emacs_url_handler"] == true
     end
 
     # Detect Homebrew prefix
@@ -234,11 +241,19 @@ module CaskEnv
 
       # Build escaped PATH for AppleScript
       escaped_path = escape_for_applescript_shell(build_path)
+      needs_framework, emacs_url_handler = UrlHandler.build_applescript(
+        escaped_path: escaped_path,
+        emacsclient_path: emacsclient,
+        enable_handler: emacs_url_handler_enabled?
+      )
+
 
       # Create temporary AppleScript source
       script_content = <<~APPLESCRIPT
         -- Emacs Client AppleScript Application
         -- Handles opening files from Finder, drag-and-drop, and launching from Spotlight/Dock
+        #{needs_framework ? 'use framework "Foundation"' : ""}
+        use scripting additions
 
         on open theDropped
           repeat with oneDrop in theDropped
@@ -262,8 +277,9 @@ module CaskEnv
           end try
         end run
 
-        -- Handle org-protocol:// URLs (for org-capture, org-roam, etc.)
+        -- Handle URL schemes
         on open location this_URL
+          #{emacs_url_handler}
           try
             do shell script "PATH='#{escaped_path}' #{emacsclient} -n " & quoted form of this_URL
           end try
@@ -272,6 +288,7 @@ module CaskEnv
           end try
         end open location
       APPLESCRIPT
+
 
       # Write and compile the script
       require 'tempfile'
@@ -313,6 +330,7 @@ module CaskEnv
       system("/usr/libexec/PlistBuddy", "-c", "Set :CFBundleIdentifier org.gnu.EmacsClient", plist)
       system("/usr/libexec/PlistBuddy", "-c", "Set :CFBundleName 'Emacs Client'", plist)
       system("/usr/libexec/PlistBuddy", "-c", "Set :CFBundleIconFile applet", plist)
+      set_url_types(plist, emacs_url_handler_enabled?)
 
       true
     end
@@ -368,6 +386,17 @@ module CaskEnv
       shell_escaped = str.to_s.gsub("'") { "'\\''" }
       # Then escape backslashes and double quotes for AppleScript: \ -> \\, " -> \"
       shell_escaped.gsub('\\') { '\\\\' }.gsub('"') { '\\"' }
+    end
+
+    def set_url_types(plist, enable_emacs_url_handler)
+      system "/usr/libexec/PlistBuddy -c 'Delete :CFBundleURLTypes' '#{plist}' 2>/dev/null || true"
+      system "/usr/libexec/PlistBuddy", "-c", "Add :CFBundleURLTypes array", plist
+      UrlHandler.url_types(enable_handler: enable_emacs_url_handler).each_with_index do |url_type, idx|
+        system "/usr/libexec/PlistBuddy", "-c", "Add :CFBundleURLTypes:#{idx} dict", plist
+        system "/usr/libexec/PlistBuddy", "-c", "Add :CFBundleURLTypes:#{idx}:CFBundleURLName string '#{url_type[:name]}'", plist
+        system "/usr/libexec/PlistBuddy", "-c", "Add :CFBundleURLTypes:#{idx}:CFBundleURLSchemes array", plist
+        system "/usr/libexec/PlistBuddy", "-c", "Add :CFBundleURLTypes:#{idx}:CFBundleURLSchemes:0 string #{url_type[:scheme]}", plist
+      end
     end
   end
 end

@@ -59,15 +59,31 @@ class TestBuildConfig < Minitest::Test
     end
   end
 
+  def test_valid_emacs_url_handler_true
+    with_temp_config("emacs_url_handler: true") do |path|
+      result = load_config_from_path(path)
+      assert_equal true, result[:config]["emacs_url_handler"]
+    end
+  end
+
+  def test_valid_emacs_url_handler_false
+    with_temp_config("emacs_url_handler: false") do |path|
+      result = load_config_from_path(path)
+      assert_equal false, result[:config]["emacs_url_handler"]
+    end
+  end
+
   def test_valid_full_config
     yaml = <<~YAML
       icon: spacemacs
       inject_path: true
+      emacs_url_handler: false
     YAML
     with_temp_config(yaml) do |path|
       result = load_config_from_path(path)
       assert_equal "spacemacs", result[:config]["icon"]
       assert_equal true, result[:config]["inject_path"]
+      assert_equal false, result[:config]["emacs_url_handler"]
     end
   end
 
@@ -141,6 +157,16 @@ class TestBuildConfig < Minitest::Test
         load_config_from_path(path)
       end
       assert_includes error.message, "Invalid 'inject_path'"
+    end
+  end
+
+  def test_invalid_emacs_url_handler_string
+    with_temp_config('emacs_url_handler: "yes"') do |path|
+      error = assert_raises(BuildConfig::ConfigurationError) do
+        load_config_from_path(path)
+      end
+      assert_includes error.message, "Invalid 'emacs_url_handler'"
+      assert_includes error.message, "Expected: true or false"
     end
   end
 

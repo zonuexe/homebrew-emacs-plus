@@ -9,6 +9,7 @@
 - Launch a new Emacs frame from Spotlight or the Dock
 - Set Emacs Client as the default application for text files
 - Handle `org-protocol://` URLs for org-capture, org-roam, and other integrations
+- (Optional) Register `emacs://` URLs to open file paths when `emacs_url_handler: true` is set in `~/.config/emacs-plus/build.yml`
 
 ## Why AppleScript?
 
@@ -199,6 +200,17 @@ To use org-protocol with Emacs Client.app:
    ```bash
    cp -r "$(brew --prefix)/opt/emacs-plus@30/Emacs Client.app" /Applications/
    ```
+
+### emacs:// URL handler (optional)
+
+To register `emacs://` links that map to file paths (e.g., `emacs:///Users/me/file.org#42`), set the flag in your build config and reinstall:
+
+```yaml
+# ~/.config/emacs-plus/build.yml
+emacs_url_handler: true
+```
+
+Then reinstall the formula/cask so the updated Emacs Client.app bundle is generated.
 4. Test with a URL like: `org-protocol://capture?template=t&url=https://example.com&title=Test`
 
 For org-roam, see the [org-roam manual](https://www.orgroam.com/manual.html#org_002droam_002dprotocol).

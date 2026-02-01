@@ -12,8 +12,8 @@ module BuildConfig
   class ConfigurationError < StandardError; end
 
   # Known configuration keys by context
-  FORMULA_KEYS = %w[icon patches revision inject_path].freeze
-  CASK_KEYS = %w[icon inject_path].freeze
+  FORMULA_KEYS = %w[icon patches revision inject_path emacs_url_handler].freeze
+  CASK_KEYS = %w[icon inject_path emacs_url_handler].freeze
   ALL_KEYS = (FORMULA_KEYS + CASK_KEYS).uniq.freeze
 
   class << self
@@ -98,6 +98,7 @@ module BuildConfig
       validate_patches!(config["patches"], path) if config.key?("patches")
       validate_revision!(config["revision"], path) if config.key?("revision")
       validate_inject_path!(config["inject_path"], path) if config.key?("inject_path")
+      validate_emacs_url_handler!(config["emacs_url_handler"], path) if config.key?("emacs_url_handler")
     end
 
     # Suggest correct key name for typos
@@ -168,6 +169,17 @@ module BuildConfig
         "  patches:\n" \
         "    - frame-transparency\n" \
         "    - aggressive-read-buffering"
+    end
+
+    def validate_emacs_url_handler!(value, path)
+      return if [true, false].include?(value)
+
+      raise ConfigurationError,
+        "Invalid 'emacs_url_handler' in #{path}\n" \
+        "Expected: true or false\n" \
+        "Got: #{value.inspect} (#{value.class})\n\n" \
+        "Example:\n" \
+        "  emacs_url_handler: true"
     end
 
     def validate_revision!(revision, path)
